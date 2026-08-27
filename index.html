@@ -4,8 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Real-time 3D International Space Station tracker with Indonesian and English support.">
+  <meta name="theme-color" content="#050b18">
   <title>ISS Live Tracker</title>
   <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="stylesheet" href="assets/css/location.css">
 </head>
 <body>
   <header class="topbar">
@@ -19,29 +21,78 @@
     </div>
   </header>
 
-  <main>
-    <section class="hero">
-      <div>
-        <span class="status"><span class="status-dot"></span><span data-i18n="status">Sistem siap</span></span>
+  <main class="dashboard">
+    <section class="hero-card">
+      <div class="hero-copy">
+        <span class="status"><span class="status-dot" id="status-dot"></span><span data-i18n="status" id="system-status">Connecting…</span></span>
         <h2 data-i18n="headline">Track the International Space Station in real time.</h2>
-        <p data-i18n="intro">Fondasi awal untuk visualisasi 3D Bumi dan data orbit ISS secara realtime.</p>
+        <p data-i18n="intro">Explore the ISS position around a live 3D Earth and compare it with your location.</p>
+      </div>
+      <div class="hero-meta">
+        <span data-i18n="lastUpdate">Last update</span>
+        <strong id="last-update">--</strong>
       </div>
     </section>
 
-    <section class="telemetry" aria-label="ISS telemetry">
-      <article><span data-i18n="latitude">Latitude</span><strong>--</strong></article>
-      <article><span data-i18n="longitude">Longitude</span><strong>--</strong></article>
-      <article><span data-i18n="altitude">Altitude</span><strong>-- km</strong></article>
-      <article><span data-i18n="speed">Speed</span><strong>-- km/h</strong></article>
+    <section class="tracker-grid">
+      <div class="globe-card">
+        <div id="globe" class="globe" aria-label="Interactive 3D Earth"></div>
+        <div class="globe-hint" data-i18n="globeHint">Drag to rotate · Scroll to zoom</div>
+      </div>
+
+      <aside class="side-panel">
+        <section class="panel telemetry-panel">
+          <div class="panel-heading">
+            <h3 data-i18n="issTelemetry">ISS Telemetry</h3>
+            <span class="live-badge">LIVE</span>
+          </div>
+          <div class="telemetry">
+            <article><span data-i18n="latitude">Latitude</span><strong id="iss-lat">--</strong></article>
+            <article><span data-i18n="longitude">Longitude</span><strong id="iss-lon">--</strong></article>
+            <article><span data-i18n="altitude">Altitude</span><strong id="iss-alt">--</strong></article>
+            <article><span data-i18n="speed">Speed</span><strong id="iss-speed">--</strong></article>
+            <article><span data-i18n="visibility">Visibility</span><strong id="iss-visibility">--</strong></article>
+            <article><span data-i18n="footprint">Footprint</span><strong id="iss-footprint">--</strong></article>
+          </div>
+        </section>
+
+        <section class="panel location-panel">
+          <div class="panel-heading">
+            <h3 data-i18n="yourLocation">Your Location</h3>
+          </div>
+          <p class="panel-note" data-i18n="locationNote">Use your browser location or enter coordinates manually. Your location stays in this browser.</p>
+          <div class="location-actions">
+            <button id="locate-btn" class="primary-button" data-i18n="useMyLocation">Use my location</button>
+          </div>
+          <form id="manual-location-form" class="manual-form">
+            <label><span data-i18n="latitude">Latitude</span><input id="manual-lat" type="number" min="-90" max="90" step="any" placeholder="-6.200000" required></label>
+            <label><span data-i18n="longitude">Longitude</span><input id="manual-lon" type="number" min="-180" max="180" step="any" placeholder="106.816666" required></label>
+            <button type="submit" class="secondary-button" data-i18n="setLocation">Set location</button>
+          </form>
+          <div class="location-result" id="location-result">--</div>
+          <div class="distance-result">
+            <span data-i18n="distanceToIss">Distance to ISS</span>
+            <strong id="distance-to-iss">--</strong>
+          </div>
+        </section>
+      </aside>
+    </section>
+
+    <section class="info-strip">
+      <div><span data-i18n="dataSource">Data source</span><strong>Where The ISS At?</strong></div>
+      <div><span data-i18n="refreshRate">Refresh</span><strong>~5 s</strong></div>
+      <div><span data-i18n="privacy">Privacy</span><strong data-i18n="browserOnly">Location stays in your browser</strong></div>
     </section>
   </main>
 
   <footer>
     <span>ISS Live Tracker</span>
-    <span data-i18n="footer">Realtime orbital visualization</span>
+    <span data-i18n="footer">Real-time orbital visualization</span>
   </footer>
 
   <script src="assets/js/i18n.js"></script>
+  <script src="assets/js/location.js"></script>
+  <script type="module" src="assets/js/iss.js"></script>
   <script src="assets/js/app.js"></script>
 </body>
 </html>
