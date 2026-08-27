@@ -35,7 +35,12 @@ function getSubsolarPoint(date = new Date()) {
 function updateSunPosition() {
   if (!sunLight) return;
   const sunPoint = getSubsolarPoint();
-  const sunVector = latLonToVector3(sunPoint.lat, sunPoint.lon, 5);
+
+  // DirectionalLight illuminates the scene along the vector from its position
+  // toward the origin. Our geographic-to-3D mapping is oriented opposite to
+  // the light-space convention, so the physical Sun vector must be reversed
+  // here to put the daylight hemisphere under the real subsolar point.
+  const sunVector = latLonToVector3(sunPoint.lat, sunPoint.lon, -5);
   sunLight.position.copy(sunVector);
   sunLight.lookAt(0, 0, 0);
 }
