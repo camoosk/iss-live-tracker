@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Real-time 3D International Space Station tracker with Indonesian and English support.">
+  <title>ISS Live Tracker</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">ISS LIVE TRACKER</p>
+      <h1 data-i18n="title">ISS Live Tracker</h1>
+    </div>
+    <div class="language-switcher" aria-label="Language selector">
+      <button class="lang-button active" data-language="id">🇮🇩 ID</button>
+      <button class="lang-button" data-language="en">🇬🇧 EN</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div>
+        <span class="status"><span class="status-dot"></span><span data-i18n="status">Sistem siap</span></span>
+        <h2 data-i18n="headline">Track the International Space Station in real time.</h2>
+        <p data-i18n="intro">Fondasi awal untuk visualisasi 3D Bumi dan data orbit ISS secara realtime.</p>
+      </div>
+    </section>
+
+    <section class="telemetry" aria-label="ISS telemetry">
+      <article><span data-i18n="latitude">Latitude</span><strong>--</strong></article>
+      <article><span data-i18n="longitude">Longitude</span><strong>--</strong></article>
+      <article><span data-i18n="altitude">Altitude</span><strong>-- km</strong></article>
+      <article><span data-i18n="speed">Speed</span><strong>-- km/h</strong></article>
+    </section>
+  </main>
+
+  <footer>
+    <span>ISS Live Tracker</span>
+    <span data-i18n="footer">Realtime orbital visualization</span>
+  </footer>
+
+  <script src="assets/js/i18n.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>
