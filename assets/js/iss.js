@@ -17,19 +17,19 @@ controls.enableDamping = true;
 controls.enablePan = false;
 controls.minDistance = 6.2;
 controls.maxDistance = 18;
-scene.add(new THREE.AmbientLight(0x7890b8, 1.8));
-const sun = new THREE.DirectionalLight(0xffffff, 3.2);
-sun.position.set(5, 3, 6);
+
+// Keep ambient light low so the night side can become genuinely dark.
+scene.add(new THREE.AmbientLight(0x7890b8, 0.22));
+const sun = new THREE.DirectionalLight(0xffffff, 2.9);
 scene.add(sun);
 const earthGroup = new THREE.Group();
 scene.add(earthGroup);
 
 let earth;
 const earthTexture = new THREE.TextureLoader().load('https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg');
-earth = new THREE.Mesh(new THREE.SphereGeometry(RADIUS, 64, 64), new THREE.MeshPhongMaterial({ map: earthTexture, color: 0x9dc9ff, shininess: 12 }));
+earth = new THREE.Mesh(new THREE.SphereGeometry(RADIUS, 64, 64), new THREE.MeshPhongMaterial({ map: earthTexture, color: 0xffffff, shininess: 10 }));
 earthGroup.add(earth);
 
-earthTexture.addEventListener?.('dispose', () => {});
 const atmosphere = new THREE.Mesh(new THREE.SphereGeometry(RADIUS * 1.035, 48, 48), new THREE.MeshBasicMaterial({ color: 0x4da3ff, transparent: true, opacity: 0.09, side: THREE.BackSide }));
 earthGroup.add(atmosphere);
 const grid = new THREE.Mesh(new THREE.SphereGeometry(RADIUS * 1.004, 24, 16), new THREE.MeshBasicMaterial({ color: 0x6ea8ff, wireframe: true, transparent: true, opacity: 0.07 }));
@@ -60,7 +60,6 @@ let orbitLine = null;
 let latest = null;
 
 // Geographic coordinates are aligned to the visible Earth texture.
-// This frame is the inverse of the old mapping, which placed Java near South America.
 function latLonToVector(latitude, longitude, radius = RADIUS) {
   const lat = THREE.MathUtils.degToRad(latitude);
   const lon = THREE.MathUtils.degToRad(longitude);
@@ -68,6 +67,17 @@ function latLonToVector(latitude, longitude, radius = RADIUS) {
   return new THREE.Vector3(radius * cosLat * Math.cos(lon), radius * Math.sin(lat), -radius * cosLat * Math.sin(lon));
 }
 function setMarker(marker, latitude, longitude, radius) { marker.position.copy(latLonToVector(latitude, longitude, radius)); }
+
+// Approximate the Sun's subsolar point from UTC. This keeps the globe's
+// illumination tied to real time instead of a fixed lamp direction.
+function updateSunPosition(date = new Date()) {
+  const dayOfYear = Math.floor((Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) - Date.UTC(date.getUTCFullYear(), 0, 0)) / 86400000);
+  const hour = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
+  const declination = 23.44 * Math.sin(THREE.MathUtils.degToRad((360 / 365.24) * (dayOfYear - 81)));
+  const subsolarLongitude = THREE.MathUtils.euclideanModulo(180 - hour * 15, 360) - 180;
+  sun.position.copy(latLonToVector(declination, subsolarLongitude, 10));
+}
+
 function renderOrbit(points) {
   if (orbitLine) { earthGroup.remove(orbitLine); orbitLine.geometry.dispose(); orbitLine.material.dispose(); orbitLine = null; }
   if (!points?.length) return;
@@ -91,9 +101,11 @@ function resize() { const width = Math.max(globeEl.clientWidth, 1); const height
 window.ISS_3D = { setUserLocation(location) { setMarker(userMarker, Number(location.latitude), Number(location.longitude), RADIUS * 1.03); userMarker.visible = true; }, get latest() { return latest; } };
 window.addEventListener('resize', resize);
 resize();
+updateSunPosition();
 updateISS().catch(error => window.dispatchEvent(new CustomEvent('iss:error', { detail: error })));
 updateOrbit();
 setInterval(() => updateISS().catch(error => window.dispatchEvent(new CustomEvent('iss:error', { detail: error }))), 5000);
 setInterval(updateOrbit, 60000);
-function animate() { requestAnimationFrame(animate); earthGroup.rotation.y += 0.00022; controls.update(); renderer.render(scene, camera); }
+setInterval(updateSunPosition, 60000);
+function animate() { requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); }
 animate();
