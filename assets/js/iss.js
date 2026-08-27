@@ -1,111 +1,197 @@
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js';
-import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/controls/OrbitControls.js';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-const API_URL = 'https://api.wheretheiss.at/v1/satellites/25544';
-const ORBIT_URL = 'https://api.wheretheiss.at/v1/satellites/25544/positions';
-const RADIUS = 3.2;
-const globeEl = document.getElementById('globe');
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 1000);
-camera.position.set(0, 1.1, 10.4);
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setClearColor(0x01040b, 1);
-globeEl.appendChild(renderer.domElement);
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.enablePan = false;
-controls.minDistance = 6.2;
-controls.maxDistance = 18;
+const EARTH_RADIUS = 1;
+const ISS_API = 'https://api.wheretheiss.at/v1/satellites/25544';
 
-// Keep ambient light low so the night side can become genuinely dark.
-scene.add(new THREE.AmbientLight(0x7890b8, 0.22));
-const sun = new THREE.DirectionalLight(0xffffff, 2.9);
-scene.add(sun);
-const earthGroup = new THREE.Group();
-scene.add(earthGroup);
+let scene, camera, renderer, controls, earth, issMarker, userMarker, orbitLine;
+let issData = null;
+let userLocation = null;
 
-let earth;
-const earthTexture = new THREE.TextureLoader().load('https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg');
-earth = new THREE.Mesh(new THREE.SphereGeometry(RADIUS, 64, 64), new THREE.MeshPhongMaterial({ map: earthTexture, color: 0xffffff, shininess: 10 }));
-earthGroup.add(earth);
+const $ = (id) => document.getElementById(id);
 
-const atmosphere = new THREE.Mesh(new THREE.SphereGeometry(RADIUS * 1.035, 48, 48), new THREE.MeshBasicMaterial({ color: 0x4da3ff, transparent: true, opacity: 0.09, side: THREE.BackSide }));
-earthGroup.add(atmosphere);
-const grid = new THREE.Mesh(new THREE.SphereGeometry(RADIUS * 1.004, 24, 16), new THREE.MeshBasicMaterial({ color: 0x6ea8ff, wireframe: true, transparent: true, opacity: 0.07 }));
-earthGroup.add(grid);
-
-const starGeometry = new THREE.BufferGeometry();
-const starPositions = [];
-for (let i = 0; i < 1800; i++) { const r = 45 + Math.random() * 35; const u = Math.random() * 2 - 1; const a = Math.random() * Math.PI * 2; const s = Math.sqrt(1 - u * u); starPositions.push(r * s * Math.cos(a), r * u, r * s * Math.sin(a)); }
-starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3));
-scene.add(new THREE.Points(starGeometry, new THREE.PointsMaterial({ color: 0xbfd8ff, size: 0.055, sizeAttenuation: true })));
-
-const iss = new THREE.Group();
-iss.add(new THREE.Mesh(new THREE.SphereGeometry(0.105, 20, 20), new THREE.MeshBasicMaterial({ color: 0xff4d6d })));
-iss.add(new THREE.Mesh(new THREE.SphereGeometry(0.22, 20, 20), new THREE.MeshBasicMaterial({ color: 0xff4d6d, transparent: true, opacity: 0.18 })));
-const panelMat = new THREE.MeshBasicMaterial({ color: 0xb7d7ff });
-for (const x of [-0.32, 0.32]) { const panel = new THREE.Mesh(new THREE.PlaneGeometry(0.28, 0.11), panelMat); panel.position.x = x; panel.rotation.y = Math.PI / 2; iss.add(panel); }
-earthGroup.add(iss);
-
-const userMarker = new THREE.Group();
-userMarker.add(new THREE.Mesh(new THREE.SphereGeometry(0.09, 18, 18), new THREE.MeshBasicMaterial({ color: 0x5eead4 })));
-const userRing = new THREE.Mesh(new THREE.RingGeometry(0.13, 0.16, 32), new THREE.MeshBasicMaterial({ color: 0x5eead4, transparent: true, opacity: 0.7, side: THREE.DoubleSide }));
-userRing.rotation.x = Math.PI / 2;
-userMarker.add(userRing);
-userMarker.visible = false;
-earthGroup.add(userMarker);
-
-let orbitLine = null;
-let latest = null;
-
-// Geographic coordinates are aligned to the visible Earth texture.
-function latLonToVector(latitude, longitude, radius = RADIUS) {
-  const lat = THREE.MathUtils.degToRad(latitude);
-  const lon = THREE.MathUtils.degToRad(longitude);
-  const cosLat = Math.cos(lat);
-  return new THREE.Vector3(radius * cosLat * Math.cos(lon), radius * Math.sin(lat), -radius * cosLat * Math.sin(lon));
-}
-function setMarker(marker, latitude, longitude, radius) { marker.position.copy(latLonToVector(latitude, longitude, radius)); }
-
-// Approximate the Sun's subsolar point from UTC. This keeps the globe's
-// illumination tied to real time instead of a fixed lamp direction.
-function updateSunPosition(date = new Date()) {
-  const dayOfYear = Math.floor((Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) - Date.UTC(date.getUTCFullYear(), 0, 0)) / 86400000);
-  const hour = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
-  const declination = 23.44 * Math.sin(THREE.MathUtils.degToRad((360 / 365.24) * (dayOfYear - 81)));
-  const subsolarLongitude = THREE.MathUtils.euclideanModulo(180 - hour * 15, 360) - 180;
-  sun.position.copy(latLonToVector(declination, subsolarLongitude, 10));
+function latLonToVector3(lat, lon, radius = EARTH_RADIUS) {
+  // Earth texture convention: longitude 0° is at the texture center,
+  // latitude +90° is north. Three.js sphere UVs require this mapping.
+  const phi = THREE.MathUtils.degToRad(90 - lat);
+  const theta = THREE.MathUtils.degToRad(lon + 180);
+  return new THREE.Vector3(
+    -radius * Math.sin(phi) * Math.cos(theta),
+    radius * Math.cos(phi),
+    radius * Math.sin(phi) * Math.sin(theta)
+  );
 }
 
-function renderOrbit(points) {
-  if (orbitLine) { earthGroup.remove(orbitLine); orbitLine.geometry.dispose(); orbitLine.material.dispose(); orbitLine = null; }
-  if (!points?.length) return;
-  const geometry = new THREE.BufferGeometry().setFromPoints(points.map(p => latLonToVector(Number(p.latitude), Number(p.longitude), RADIUS * 1.075)));
-  orbitLine = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0xff6685, transparent: true, opacity: 0.68 }));
-  earthGroup.add(orbitLine);
+function createScene() {
+  const container = $('earth-container') || $('globe');
+  if (!container) return;
+
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(38, container.clientWidth / container.clientHeight, 0.1, 100);
+  camera.position.set(0, 0.25, 3.05);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(container.clientWidth, container.clientHeight);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  container.innerHTML = '';
+  container.appendChild(renderer.domElement);
+
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.minDistance = 1.25;
+  controls.maxDistance = 5;
+  controls.enablePan = false;
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.18));
+  const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+  sun.position.set(5, 2, 5);
+  scene.add(sun);
+
+  const loader = new THREE.TextureLoader();
+  const texture = loader.load(
+    new URL('../textures/earth.jpg', import.meta.url).href,
+    (tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      earth.material.map = tex;
+      earth.material.needsUpdate = true;
+    }
+  );
+  texture.colorSpace = THREE.SRGBColorSpace;
+
+  earth = new THREE.Mesh(
+    new THREE.SphereGeometry(EARTH_RADIUS, 96, 64),
+    new THREE.MeshPhongMaterial({ map: texture, shininess: 4 })
+  );
+  scene.add(earth);
+
+  const atmosphere = new THREE.Mesh(
+    new THREE.SphereGeometry(1.025, 64, 48),
+    new THREE.MeshBasicMaterial({ color: 0x5aa9ff, transparent: true, opacity: 0.07, side: THREE.BackSide })
+  );
+  scene.add(atmosphere);
+
+  issMarker = new THREE.Mesh(
+    new THREE.SphereGeometry(0.035, 16, 12),
+    new THREE.MeshBasicMaterial({ color: 0xff405f })
+  );
+  scene.add(issMarker);
+
+  userMarker = new THREE.Mesh(
+    new THREE.SphereGeometry(0.035, 16, 12),
+    new THREE.MeshBasicMaterial({ color: 0x48e5d2 })
+  );
+  userMarker.visible = false;
+  scene.add(userMarker);
+
+  window.addEventListener('resize', () => {
+    camera.aspect = container.clientWidth / container.clientHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(container.clientWidth, container.clientHeight);
+  });
+
+  animate();
 }
-async function fetchJson(url) { const response = await fetch(url, { cache: 'no-store' }); if (!response.ok) throw new Error(`HTTP ${response.status}`); return response.json(); }
-async function updateOrbit() {
-  const now = Math.floor(Date.now() / 1000);
-  const timestamps = Array.from({ length: 10 }, (_, i) => now + (i - 4) * 540).join(',');
-  try { renderOrbit(await fetchJson(`${ORBIT_URL}?timestamps=${timestamps}&units=kilometers`)); } catch (error) { console.warn('ISS orbit path unavailable:', error); }
+
+function animate() {
+  requestAnimationFrame(animate);
+  controls?.update();
+  renderer?.render(scene, camera);
 }
-async function updateISS() {
-  const data = await fetchJson(`${API_URL}?units=kilometers`);
-  latest = data;
-  setMarker(iss, Number(data.latitude), Number(data.longitude), RADIUS * 1.085);
-  window.dispatchEvent(new CustomEvent('iss:update', { detail: data }));
+
+function updateISS(data) {
+  issData = data;
+  const lat = Number(data.latitude);
+  const lon = Number(data.longitude);
+  if (Number.isFinite(lat) && Number.isFinite(lon)) {
+    issMarker.position.copy(latLonToVector3(lat, lon, 1.035));
+  }
+
+  const latEl = $('iss-latitude');
+  const lonEl = $('iss-longitude');
+  const altEl = $('iss-altitude');
+  const speedEl = $('iss-speed');
+  const visEl = $('iss-visibility');
+  const footEl = $('iss-footprint');
+  const updateEl = $('last-update');
+  if (latEl) latEl.textContent = `${lat.toFixed(3)}°`;
+  if (lonEl) lonEl.textContent = `${lon.toFixed(3)}°`;
+  if (altEl) altEl.textContent = `${Number(data.altitude).toFixed(1)} km`;
+  if (speedEl) speedEl.textContent = `${Number(data.velocity).toLocaleString(undefined, { maximumFractionDigits: 0 })} km/h`;
+  if (visEl) visEl.textContent = data.visibility || '--';
+  if (footEl) footEl.textContent = `${Number(data.footprint).toLocaleString(undefined, { maximumFractionDigits: 0 })} km`;
+  if (updateEl) updateEl.textContent = new Date().toLocaleTimeString();
+  updateDistance();
 }
-function resize() { const width = Math.max(globeEl.clientWidth, 1); const height = Math.max(globeEl.clientHeight, 1); camera.aspect = width / height; camera.updateProjectionMatrix(); renderer.setSize(width, height, false); }
-window.ISS_3D = { setUserLocation(location) { setMarker(userMarker, Number(location.latitude), Number(location.longitude), RADIUS * 1.03); userMarker.visible = true; }, get latest() { return latest; } };
-window.addEventListener('resize', resize);
-resize();
-updateSunPosition();
-updateISS().catch(error => window.dispatchEvent(new CustomEvent('iss:error', { detail: error })));
-updateOrbit();
-setInterval(() => updateISS().catch(error => window.dispatchEvent(new CustomEvent('iss:error', { detail: error }))), 5000);
-setInterval(updateOrbit, 60000);
-setInterval(updateSunPosition, 60000);
-function animate() { requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); }
-animate();
+
+function updateUserMarker(lat, lon) {
+  userLocation = { lat, lon };
+  userMarker.visible = true;
+  userMarker.position.copy(latLonToVector3(lat, lon, 1.035));
+  updateDistance();
+}
+
+function updateDistance() {
+  if (!userLocation || !issData) return;
+  const a = latLonToVector3(userLocation.lat, userLocation.lon, 1);
+  const b = latLonToVector3(Number(issData.latitude), Number(issData.longitude), 1);
+  const angle = a.angleTo(b);
+  const surface = angle * 6371;
+  const el = $('distance-to-iss');
+  if (el) el.textContent = `${surface.toLocaleString(undefined, { maximumFractionDigits: 0 })} km`;
+}
+
+async function fetchISS() {
+  try {
+    const response = await fetch(ISS_API, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    updateISS(await response.json());
+  } catch (error) {
+    console.error('ISS telemetry error:', error);
+  }
+}
+
+function setupLocation() {
+  const useButton = $('use-location');
+  const setButton = $('set-location');
+  const latInput = $('latitude');
+  const lonInput = $('longitude');
+
+  useButton?.addEventListener('click', () => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude;
+        const lon = position.coords.longitude;
+        latInput.value = lat.toFixed(6);
+        lonInput.value = lon.toFixed(6);
+        updateUserMarker(lat, lon);
+        localStorage.setItem('iss-user-location', JSON.stringify({ lat, lon }));
+      },
+      (error) => console.warn('Geolocation error:', error),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+    );
+  });
+
+  setButton?.addEventListener('click', () => {
+    const lat = Number(latInput.value);
+    const lon = Number(lonInput.value);
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lon) || lon < -180 || lon > 180) return;
+    updateUserMarker(lat, lon);
+    localStorage.setItem('iss-user-location', JSON.stringify({ lat, lon }));
+  });
+
+  try {
+    const saved = JSON.parse(localStorage.getItem('iss-user-location'));
+    if (saved && Number.isFinite(saved.lat) && Number.isFinite(saved.lon)) {
+      latInput.value = saved.lat.toFixed(6);
+      lonInput.value = saved.lon.toFixed(6);
+      updateUserMarker(saved.lat, saved.lon);
+    }
+  } catch {}
+}
+
+createScene();
+setupLocation();
+fetchISS();
+setInterval(fetchISS, 5000);
