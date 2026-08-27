@@ -2,17 +2,17 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const EARTH_RADIUS = 1;
+const EARTH_MEAN_RADIUS_KM = 6371;
 const ISS_API = 'https://api.wheretheiss.at/v1/satellites/25544';
 
-let scene, camera, renderer, controls, earth, issMarker, userMarker, orbitLine;
+let scene, camera, renderer, controls, earth, issMarker, userMarker, orbitLine, sunLight;
 let issData = null;
 let userLocation = null;
 
 const $ = (id) => document.getElementById(id);
 
+// Geographic coordinates -> the same 3D coordinate system used by the Earth texture.
 function latLonToVector3(lat, lon, radius = EARTH_RADIUS) {
-  // Earth texture convention: longitude 0° is at the texture center,
-  // latitude +90° is north. Three.js sphere UVs require this mapping.
   const phi = THREE.MathUtils.degToRad(90 - lat);
   const theta = THREE.MathUtils.degToRad(lon + 180);
   return new THREE.Vector3(
@@ -20,6 +20,24 @@ function latLonToVector3(lat, lon, radius = EARTH_RADIUS) {
     radius * Math.cos(phi),
     radius * Math.sin(phi) * Math.sin(theta)
   );
+}
+
+// Calculate the geographic point directly under the Sun for the current UTC time.
+// This is an approximation suitable for visual day/night shading (not astronomy-grade).
+function getSubsolarPoint(date = new Date()) {
+  const dayOfYear = Math.floor((Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) - Date.UTC(date.getUTCFullYear(), 0, 0)) / 86400000);
+  const hour = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
+  const declination = 23.44 * Math.sin(THREE.MathUtils.degToRad((360 / 365) * (dayOfYear - 81)));
+  const subsolarLongitude = THREE.MathUtils.euclideanModulo(180 - hour * 15 + 180, 360) - 180;
+  return { lat: declination, lon: subsolarLongitude };
+}
+
+function updateSunPosition() {
+  if (!sunLight) return;
+  const sunPoint = getSubsolarPoint();
+  const sunVector = latLonToVector3(sunPoint.lat, sunPoint.lon, 5);
+  sunLight.position.copy(sunVector);
+  sunLight.lookAt(0, 0, 0);
 }
 
 function createScene() {
@@ -43,10 +61,11 @@ function createScene() {
   controls.maxDistance = 5;
   controls.enablePan = false;
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.18));
-  const sun = new THREE.DirectionalLight(0xffffff, 2.2);
-  sun.position.set(5, 2, 5);
-  scene.add(sun);
+  // Low ambient illumination keeps the night side visible without washing out the day/night boundary.
+  scene.add(new THREE.AmbientLight(0xffffff, 0.12));
+  sunLight = new THREE.DirectionalLight(0xffffff, 2.6);
+  scene.add(sunLight);
+  updateSunPosition();
 
   const loader = new THREE.TextureLoader();
   const texture = loader.load(
@@ -95,6 +114,7 @@ function createScene() {
 
 function animate() {
   requestAnimationFrame(animate);
+  updateSunPosition();
   controls?.update();
   renderer?.render(scene, camera);
 }
@@ -133,10 +153,9 @@ function updateUserMarker(lat, lon) {
 
 function updateDistance() {
   if (!userLocation || !issData) return;
-  const a = latLonToVector3(userLocation.lat, userLocation.lon, 1);
-  const b = latLonToVector3(Number(issData.latitude), Number(issData.longitude), 1);
-  const angle = a.angleTo(b);
-  const surface = angle * 6371;
+  const a = latLonToVector3(userLocation.lat, userLocation.lon, 1).normalize();
+  const b = latLonToVector3(Number(issData.latitude), Number(issData.longitude), 1).normalize();
+  const surface = a.angleTo(b) * EARTH_MEAN_RADIUS_KM;
   const el = $('distance-to-iss');
   if (el) el.textContent = `${surface.toLocaleString(undefined, { maximumFractionDigits: 0 })} km`;
 }
